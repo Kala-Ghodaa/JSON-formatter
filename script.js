@@ -242,6 +242,10 @@ function renderTreeView(data, container, searchTerm = '') {
         toggle.className = 'tree-toggle';
         node.appendChild(toggle);
 
+        // Wrap content in a container for easier querying
+        const contentDiv = document.createElement('span');
+        contentDiv.className = 'tree-content';
+        
         if (key !== null) {
             const keySpan = document.createElement('span');
             keySpan.className = 'tree-key';
@@ -249,7 +253,7 @@ function renderTreeView(data, container, searchTerm = '') {
             if (searchTerm && String(key).toLowerCase().includes(searchTerm.toLowerCase())) {
                 keySpan.classList.add('highlight');
             }
-            node.appendChild(keySpan);
+            contentDiv.appendChild(keySpan);
         }
 
         const type = getType(value);
@@ -264,7 +268,7 @@ function renderTreeView(data, container, searchTerm = '') {
             openBracket.className = 'tree-bracket';
             openBracket.textContent = bracket;
             if (count === 0) openBracket.textContent += closeBracket;
-            node.appendChild(openBracket);
+            contentDiv.appendChild(openBracket);
 
             if (count > 0) {
                 const children = document.createElement('div');
@@ -282,8 +286,10 @@ function renderTreeView(data, container, searchTerm = '') {
                 const closeB = document.createElement('span');
                 closeB.className = 'tree-bracket';
                 closeB.textContent = closeBracket;
-                node.appendChild(closeB);
+                contentDiv.appendChild(closeB);
             }
+            
+            node.appendChild(contentDiv);
 
             node.classList.add('expanded');
             toggle.addEventListener('click', () => {
@@ -305,7 +311,8 @@ function renderTreeView(data, container, searchTerm = '') {
                 valSpan.classList.add('highlight');
             }
             valSpan.textContent = displayValue;
-            node.appendChild(valSpan);
+            contentDiv.appendChild(valSpan);
+            node.appendChild(contentDiv);
             node.classList.add('leaf');
         }
 
@@ -353,11 +360,21 @@ function buildNodePath(nodeElement) {
     let current = nodeElement;
     
     while (current && !current.classList.contains('root')) {
-        // Find the key span in this node
-        const keySpan = current.querySelector(':scope > .tree-key');
+        // Find the key span in this node - look for direct child with tree-key class
+        const keySpan = current.querySelector(':scope > .tree-content > .tree-key');
         if (keySpan) {
-            const keyText = keySpan.textContent.replace('\": ', '').replace(/"/g, '');
-            keys.unshift(keyText);
+            let keyText = keySpan.textContent.trim();
+            // Remove quotes and colon
+            keyText = keyText.replace(/^"/, '').replace(/":?$/, '');
+            if (keyText) {
+                keys.unshift(keyText);
+            }
+        } else {
+            // Check if this is an array index node
+            const indexMatch = current.className.match(/array-item-(\d+)/);
+            if (indexMatch) {
+                keys.unshift(indexMatch[1]);
+            }
         }
         
         // Move to parent tree-node
@@ -369,7 +386,7 @@ function buildNodePath(nodeElement) {
         }
     }
     
-    return keys.join('.');
+    return keys.length > 0 ? keys.join('.') : 'root';
 }
 
 function showNodeContextMenu(e, key, value, nodeElement) {

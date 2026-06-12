@@ -1,51 +1,101 @@
-```
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
-
-# Dependencies
-node_modules/
-.venv/
-venv/
-__pycache__/
-.mypy_cache/
-.pytest_cache/
-dist/
-build/
-target/
-.gradle/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Compiled files
+```gitignore
+# Compiled and build artifacts
 *.pyc
-*.class
+__pycache__/
 *.o
+*.obj
 *.exe
 *.dll
 *.so
 *.a
-*.obj
 *.out
+dist/
+build/
+target/
 
-# Coverage
+# Dependencies
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+*.env.*
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+*.~
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+.directory
+.Trashes
+*.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+nbproject/
+*.tmproj
+
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
+*.coverage
 
-# Compressed files
+# Python specific
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Node.js specific
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+node_modules/
+dist/
+build/
+.nyc_output
+coverage/
+
+# Java specific
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+target/
+.gradle/
+!src/main/resources/static/**
+!src/main/resources/public/**
+
+# C/C++ specific
+*.o
+*.a
+*.so
+*.dSYM/
+*.dylib
+
+# Compression files
 *.zip
 *.gz
 *.tar
@@ -54,18 +104,29 @@ htmlcov/
 *.xz
 *.7z
 *.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
 *.Z
 *.lz
 *.lzo
 *.tar.gz
 *.tar.bz2
 *.tar.xz
-*.tar.zst
+
+# Backup files
+*.backup
+*.bak
+*.old
+*.orig
+*.rej
+*~
+*.save
+*.tmp
+*.temp
+
+# IDE specific
+.vs/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
 ```
