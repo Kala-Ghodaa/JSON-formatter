@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Tools - Professional JSON Editor & Formatter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="32" height="32" rx="6" fill="#4CAF50"/>
+                    <text x="16" y="22" text-anchor="middle" fill="white" font-size="16" font-weight="bold">{}</text>
+                </svg>
+                <h1>JSON Tools</h1>
+            </div>
+            <div class="header-actions">
+                <button id="themeToggle" class="btn btn-icon" aria-label="Toggle theme" title="Toggle light/dark mode">
+                    <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"/>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                    </svg>
+                    <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-group">
+                <button class="btn btn-primary" id="formatBtn" title="Format JSON (Ctrl+Enter)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16M4 12h16M4 18h8"/>
+                    </svg>
+                    Format
+                </button>
+                <button class="btn" id="minifyBtn" title="Minify JSON (Ctrl+Shift+M)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 14h6v6M20 10h-6V4"/>
+                        <path d="M14 10l7-7M3 21l7-7"/>
+                    </svg>
+                    Minify
+                </button>
+                <button class="btn" id="validateBtn" title="Validate JSON">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    Validate
+                </button>
+                <button class="btn" id="fixBtn" title="Auto-fix JSON">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                    </svg>
+                    Fix
+                </button>
+            </div>
+            
+            <div class="toolbar-group">
+                <button class="btn" id="treeViewBtn" title="Tree View">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Tree View
+                </button>
+                <button class="btn" id="compareBtn" title="Compare JSON">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Compare
+                </button>
+                <button class="btn" id="searchBtn" title="Search (Ctrl+F)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    Search
+                </button>
+                <button class="btn" id="jmespathBtn" title="JMESPath Query & Filter">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                        <line x1="8" y1="11" x2="14" y2="11"/>
+                        <line x1="11" y1="8" x2="11" y2="14"/>
+                    </svg>
+                    Query
+                </button>
+            </div>
+
+            <div class="toolbar-group">
+                <select id="indentSelect" class="select" title="Indentation size">
+                    <option value="2">2 spaces</option>
+                    <option value="4">4 spaces</option>
+                    <option value="tab">Tab</option>
+                </select>
+            </div>
+
+            <div class="toolbar-group">
+                <label class="file-input-wrapper">
+                    <input type="file" id="fileInput" accept=".json" hidden>
+                    <span class="btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        Upload
+                    </span>
+                </label>
+                <button class="btn" id="downloadBtn" title="Download JSON">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download
+                </button>
+                <button class="btn" id="copyBtn" title="Copy to Clipboard (Ctrl+C)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    Copy
+                </button>
+            </div>
+
+            <div class="toolbar-group">
+                <button class="btn" id="convertBtn" title="Convert to other formats">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="17 1 21 5 17 9"/>
+                        <path d="M11 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>
+                        <line x1="10" y1="18" x2="20" y2="8"/>
+                    </svg>
+                    Convert ▼
+                </button>
+                <div class="dropdown" id="convertDropdown">
+                    <button data-format="csv">JSON → CSV</button>
+                    <button data-format="xml">JSON → XML</button>
+                    <button data-format="yaml">JSON → YAML</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Panel (Overlay) -->
+        <div class="search-panel overlay-panel" id="searchPanel" style="display: none;">
+            <div class="search-input-group">
+                <input type="text" id="searchInput" placeholder="Search keys and values..." aria-label="Search">
+                <button class="btn btn-small" id="searchNextBtn" title="Next match">↓</button>
+                <button class="btn btn-small" id="searchPrevBtn" title="Previous match">↑</button>
+                <span id="searchCount" class="search-count"></span>
+                <button class="btn btn-small btn-icon" id="closeSearchBtn" aria-label="Close search">×</button>
+            </div>
+            <div class="search-replace-row">
+                <input type="text" id="replaceInput" placeholder="Replace with..." aria-label="Replace">
+                <button class="btn btn-small" id="replaceBtn" title="Replace current match">Replace</button>
+                <button class="btn btn-small" id="replaceAllBtn" title="Replace all matches">Replace All</button>
+            </div>
+        </div>
+
+        <!-- JMESPath & Filter Panel (Overlay) -->
+        <div class="jmespath-panel overlay-panel" id="jmespathPanel" style="display: none;">
+            <div class="jmespath-header">
+                <h3>JMESPath Query & Filter</h3>
+                <button class="btn btn-small btn-icon" id="closeJmespathBtn" aria-label="Close">×</button>
+            </div>
+            <div class="jmespath-inputs">
+                <div class="jmespath-input">
+                    <label for="jmespathQuery">JMESPath Query:</label>
+                    <input type="text" id="jmespathQuery" placeholder="e.g., [?status=='active'].email or *.name or sort_by(@, &age)" aria-label="JMESPath query">
+                    <div class="jmespath-examples">
+                        <span class="example-tag" data-query="[?active==`true`].email">Extract emails</span>
+                        <span class="example-tag" data-query="*.name">All names</span>
+                        <span class="example-tag" data-query="sort_by(@, &age)">Sort by age</span>
+                        <span class="example-tag" data-query="reverse(@)">Reverse</span>
+                        <span class="example-tag" data-query="length(@)">Count</span>
+                        <span class="example-tag" data-query="[?price > `100`].name">Filter price</span>
+                    </div>
+                </div>
+                <div class="filter-input">
+                    <label for="filterKey">Quick Filter by Key:</label>
+                    <input type="text" id="filterKey" placeholder="e.g., email, name, id" aria-label="Filter key">
+                    <button class="btn btn-small btn-primary" id="applyFilterBtn">Apply Filter</button>
+                </div>
+            </div>
+            <button class="btn btn-primary" id="runJmespathBtn">Run Query</button>
+            <div class="jmespath-results" id="jmespathResults"></div>
+        </div>
+
+        <!-- Compare Panel (Overlay) -->
+        <div class="compare-panel overlay-panel" id="comparePanel" style="display: none;">
+            <div class="compare-header">
+                <h3>Compare JSON Documents</h3>
+                <button class="btn btn-small btn-icon" id="closeCompareBtn" aria-label="Close compare">×</button>
+            </div>
+            <div class="compare-inputs">
+                <div class="compare-input">
+                    <label>Original JSON</label>
+                    <textarea id="compareJson1" placeholder="Paste first JSON here..." spellcheck="false"></textarea>
+                </div>
+                <div class="compare-input">
+                    <label>Modified JSON</label>
+                    <textarea id="compareJson2" placeholder="Paste second JSON here..." spellcheck="false"></textarea>
+                </div>
+            </div>
+            <button class="btn btn-primary" id="doCompareBtn">Compare</button>
+            <div class="compare-results" id="compareResults"></div>
+        </div>
+
+        <!-- Node Actions Toolbar (Contextual) -->
+        <div class="node-actions-bar" id="nodeActionsBar" style="display: none;">
+            <span class="node-actions-label">Selected: <code id="selectedNodePath"></code></span>
+            <button class="btn btn-small" id="copyNodeBtn" title="Copy selected node">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy Node
+            </button>
+            <button class="btn btn-small" id="filterByNodeBtn" title="Filter to show only this node">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                Filter By This
+            </button>
+            <button class="btn btn-small" id="editNodeBtn" title="Edit this node value">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                Edit Value
+            </button>
+            <button class="btn btn-small btn-icon" id="clearSelectionBtn" title="Clear selection">×</button>
+        </div>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Left Panel - Input -->
+            <div class="panel panel-left" id="leftPanel">
+                <div class="panel-header">
+                    <span>Input</span>
+                    <div class="panel-actions">
+                        <button class="btn btn-small btn-icon" id="clearInputBtn" title="Clear input">×</button>
+                    </div>
+                </div>
+                <div class="editor-container">
+                    <div class="line-numbers" id="inputLineNumbers"></div>
+                    <textarea id="inputEditor" placeholder="Paste or type your JSON here..." spellcheck="false" aria-label="JSON input"></textarea>
+                </div>
+                <div class="panel-footer">
+                    <span id="inputStats">0 characters | 0 lines</span>
+                </div>
+            </div>
+
+            <!-- Resizer -->
+            <div class="resizer" id="resizer"></div>
+
+            <!-- Right Panel - Output -->
+            <div class="panel panel-right" id="rightPanel">
+                <div class="panel-header">
+                    <span>Output</span>
+                    <div class="panel-actions">
+                        <button class="btn btn-small" id="expandAllBtn" title="Expand all">⊞</button>
+                        <button class="btn btn-small" id="collapseAllBtn" title="Collapse all">⊟</button>
+                    </div>
+                </div>
+                <div class="editor-container">
+                    <div class="line-numbers" id="outputLineNumbers"></div>
+                    <div id="outputContainer">
+                        <textarea id="outputEditor" placeholder="Output will appear here..." spellcheck="false" readonly aria-label="JSON output"></textarea>
+                        <div id="treeView" class="tree-view" style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="panel-footer">
+                    <span id="outputStats">0 characters | 0 lines</span>
+                    <span id="validationStatus" class="validation-status"></span>
+                </div>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <span id="statusMessage">Ready</span>
+            <span id="memoryUsage"></span>
+        </footer>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Modal for Convert Results -->
+    <div class="modal" id="convertModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="convertModalTitle">Converted Output</h3>
+                <button class="btn btn-icon" id="closeConvertModal" aria-label="Close modal">×</button>
+            </div>
+            <div class="modal-body">
+                <pre id="convertOutput"></pre>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="copyConvertBtn">Copy</button>
+                <button class="btn btn-primary" id="downloadConvertBtn">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal" id="helpModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Keyboard Shortcuts</h3>
+                <button class="btn btn-icon" id="closeHelpModal" aria-label="Close help">×</button>
+            </div>
+            <div class="modal-body">
+                <table class="shortcuts-table">
+                    <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Format JSON</td></tr>
+                    <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd></td><td>Minify JSON</td></tr>
+                    <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>Search</td></tr>
+                    <tr><td><kbd>Ctrl</kbd> + <kbd>C</kbd></td><td>Copy output</td></tr>
+                    <tr><td><kbd>Escape</kbd></td><td>Close panels/modals</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

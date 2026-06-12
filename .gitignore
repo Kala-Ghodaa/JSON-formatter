@@ -1,0 +1,132 @@
+```gitignore
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+dist/
+build/
+target/
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+*.env.*
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+*.~
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+.directory
+.Trashes
+*.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+nbproject/
+*.tmproj
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+*.coverage
+
+# Python specific
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Node.js specific
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+node_modules/
+dist/
+build/
+.nyc_output
+coverage/
+
+# Java specific
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+target/
+.gradle/
+!src/main/resources/static/**
+!src/main/resources/public/**
+
+# C/C++ specific
+*.o
+*.a
+*.so
+*.dSYM/
+*.dylib
+
+# Compression files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+# Backup files
+*.backup
+*.bak
+*.old
+*.orig
+*.rej
+*~
+*.save
+*.tmp
+*.temp
+
+# IDE specific
+.vs/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+```
