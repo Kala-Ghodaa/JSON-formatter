@@ -149,8 +149,8 @@
             </div>
         </div>
 
-        <!-- Search Panel -->
-        <div class="search-panel" id="searchPanel" style="display: none;">
+        <!-- Search Panel (Overlay) -->
+        <div class="search-panel overlay-panel" id="searchPanel" style="display: none;">
             <div class="search-input-group">
                 <input type="text" id="searchInput" placeholder="Search keys and values..." aria-label="Search">
                 <button class="btn btn-small" id="searchNextBtn" title="Next match">↓</button>
@@ -165,8 +165,8 @@
             </div>
         </div>
 
-        <!-- JMESPath & Filter Panel -->
-        <div class="jmespath-panel" id="jmespathPanel" style="display: none;">
+        <!-- JMESPath & Filter Panel (Overlay) -->
+        <div class="jmespath-panel overlay-panel" id="jmespathPanel" style="display: none;">
             <div class="jmespath-header">
                 <h3>JMESPath Query & Filter</h3>
                 <button class="btn btn-small btn-icon" id="closeJmespathBtn" aria-label="Close">×</button>
@@ -194,8 +194,8 @@
             <div class="jmespath-results" id="jmespathResults"></div>
         </div>
 
-        <!-- Compare Panel -->
-        <div class="compare-panel" id="comparePanel" style="display: none;">
+        <!-- Compare Panel (Overlay) -->
+        <div class="compare-panel overlay-panel" id="comparePanel" style="display: none;">
             <div class="compare-header">
                 <h3>Compare JSON Documents</h3>
                 <button class="btn btn-small btn-icon" id="closeCompareBtn" aria-label="Close compare">×</button>
@@ -212,6 +212,32 @@
             </div>
             <button class="btn btn-primary" id="doCompareBtn">Compare</button>
             <div class="compare-results" id="compareResults"></div>
+        </div>
+
+        <!-- Node Actions Toolbar (Contextual) -->
+        <div class="node-actions-bar" id="nodeActionsBar" style="display: none;">
+            <span class="node-actions-label">Selected: <code id="selectedNodePath"></code></span>
+            <button class="btn btn-small" id="copyNodeBtn" title="Copy selected node">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy Node
+            </button>
+            <button class="btn btn-small" id="filterByNodeBtn" title="Filter to show only this node">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                </svg>
+                Filter By This
+            </button>
+            <button class="btn btn-small" id="editNodeBtn" title="Edit this node value">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                Edit Value
+            </button>
+            <button class="btn btn-small btn-icon" id="clearSelectionBtn" title="Clear selection">×</button>
         </div>
 
         <!-- Main Content Area -->

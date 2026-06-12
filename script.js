@@ -15,7 +15,11 @@ const state = {
     currentSearchIndex: -1,
     isTreeView: false,
     validateTimeout: null,
-    replaceMatches: []
+    replaceMatches: [],
+    selectedNode: null,
+    selectedNodePath: '',
+    selectedNodeValue: null,
+    filteredJson: null
 };
 
 // DOM Elements
@@ -80,6 +84,13 @@ function initElements() {
     elements.copyConvertBtn = document.getElementById('copyConvertBtn');
     elements.downloadConvertBtn = document.getElementById('downloadConvertBtn');
     elements.toastContainer = document.getElementById('toastContainer');
+    // Node actions bar elements
+    elements.nodeActionsBar = document.getElementById('nodeActionsBar');
+    elements.selectedNodePath = document.getElementById('selectedNodePath');
+    elements.copyNodeBtn = document.getElementById('copyNodeBtn');
+    elements.filterByNodeBtn = document.getElementById('filterByNodeBtn');
+    elements.editNodeBtn = document.getElementById('editNodeBtn');
+    elements.clearSelectionBtn = document.getElementById('clearSelectionBtn');
 }
 
 // Utility Functions
@@ -208,54 +219,57 @@ function fixJSON() {
 }
 
 // Tree View
-function renderTreeView(data, container) {
+function renderTreeView(data, container, searchTerm = '') {
     container.innerHTML = '';
-    
+
     function getType(val) {
         if (val === null) return 'null';
         if (Array.isArray(val)) return 'array';
         return typeof val;
     }
-    
+
     function escapeHtml(str) {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
     }
-    
+
     function createNode(key, value, isRoot = false) {
         const node = document.createElement('div');
         node.className = 'tree-node' + (isRoot ? ' root' : '');
-        
+
         const toggle = document.createElement('span');
         toggle.className = 'tree-toggle';
         node.appendChild(toggle);
-        
+
         if (key !== null) {
             const keySpan = document.createElement('span');
             keySpan.className = 'tree-key';
             keySpan.textContent = `"${key}": `;
+            if (searchTerm && String(key).toLowerCase().includes(searchTerm.toLowerCase())) {
+                keySpan.classList.add('highlight');
+            }
             node.appendChild(keySpan);
         }
-        
+
         const type = getType(value);
-        
+
         if (type === 'object' || type === 'array') {
             const isArray = type === 'array';
             const bracket = isArray ? '[' : '{';
             const closeBracket = isArray ? ']' : '}';
             const count = isArray ? value.length : Object.keys(value).length;
-            
+
             const openBracket = document.createElement('span');
             openBracket.className = 'tree-bracket';
             openBracket.textContent = bracket;
             if (count === 0) openBracket.textContent += closeBracket;
             node.appendChild(openBracket);
-            
+
             if (count > 0) {
                 const children = document.createElement('div');
                 children.className = 'tree-children';
-                
+
                 if (isArray) {
                     value.forEach((item, i) => children.appendChild(createNode(i, item)));
                 } else {
@@ -263,14 +277,14 @@ function renderTreeView(data, container) {
                         children.appendChild(createNode(k, v));
                     });
                 }
-                
+
                 node.appendChild(children);
                 const closeB = document.createElement('span');
                 closeB.className = 'tree-bracket';
                 closeB.textContent = closeBracket;
                 node.appendChild(closeB);
             }
-            
+
             node.classList.add('expanded');
             toggle.addEventListener('click', () => {
                 node.classList.toggle('expanded');
@@ -279,17 +293,149 @@ function renderTreeView(data, container) {
         } else {
             const valSpan = document.createElement('span');
             valSpan.className = `tree-${type}`;
-            if (type === 'string') valSpan.textContent = `"${escapeHtml(value)}"`;
-            else if (type === 'null') valSpan.textContent = 'null';
-            else valSpan.textContent = String(value);
+            let displayValue;
+            if (type === 'string') {
+                displayValue = `"${escapeHtml(value)}"`;
+            } else if (type === 'null') {
+                displayValue = 'null';
+            } else {
+                displayValue = String(value);
+            }
+            if (searchTerm && displayValue.toLowerCase().includes(searchTerm.toLowerCase())) {
+                valSpan.classList.add('highlight');
+            }
+            valSpan.textContent = displayValue;
             node.appendChild(valSpan);
             node.classList.add('leaf');
         }
-        
+
+        node.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showNodeContextMenu(e, key, value, node);
+        });
+
+        node.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tree-toggle') || e.target.classList.contains('tree-key')) return;
+            // Select the node and show actions bar
+            selectTreeNode(node, key, value);
+        });
+
         return node;
     }
-    
+
     container.appendChild(createNode(null, data, true));
+}
+
+// Select a tree node and show the actions bar
+function selectTreeNode(nodeElement, key, value) {
+    // Remove selection from previously selected node
+    const prevSelected = elements.treeView.querySelector('.tree-node.selected');
+    if (prevSelected) prevSelected.classList.remove('selected');
+    
+    // Add selection to current node
+    nodeElement.classList.add('selected');
+    
+    // Store selection info
+    state.selectedNode = nodeElement;
+    state.selectedNodeValue = value;
+    state.selectedNodePath = buildNodePath(nodeElement);
+    
+    // Update and show actions bar
+    elements.selectedNodePath.textContent = state.selectedNodePath || 'root';
+    elements.nodeActionsBar.style.display = 'flex';
+    
+    showToast('Node selected. Use the toolbar above for actions.', 'info');
+}
+
+// Build the path to a node (e.g., "users.0.email" or "config.settings.theme")
+function buildNodePath(nodeElement) {
+    const keys = [];
+    let current = nodeElement;
+    
+    while (current && !current.classList.contains('root')) {
+        // Find the key span in this node
+        const keySpan = current.querySelector(':scope > .tree-key');
+        if (keySpan) {
+            const keyText = keySpan.textContent.replace('\": ', '').replace(/"/g, '');
+            keys.unshift(keyText);
+        }
+        
+        // Move to parent tree-node
+        const parent = current.parentElement?.closest('.tree-node');
+        if (parent) {
+            current = parent;
+        } else {
+            break;
+        }
+    }
+    
+    return keys.join('.');
+}
+
+function showNodeContextMenu(e, key, value, nodeElement) {
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.position = 'absolute';
+    menu.style.left = e.pageX + 'px';
+    menu.style.top = e.pageY + 'px';
+    menu.style.background = 'var(--bg-primary)';
+    menu.style.border = '1px solid var(--border-color)';
+    menu.style.borderRadius = '4px';
+    menu.style.padding = '4px 0';
+    menu.style.zIndex = '1000';
+    menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+
+    const items = [
+        { label: 'Copy Value', action: () => {
+            navigator.clipboard.writeText(JSON.stringify(value, null, 2)).then(() => showToast('Copied!', 'success'));
+        }},
+        { label: 'Copy Path', action: () => {
+            const path = getNodePath(nodeElement);
+            navigator.clipboard.writeText(path).then(() => showToast('Path copied!', 'success'));
+        }},
+        { label: 'Filter by this Key', action: () => {
+            if (key !== null) {
+                filterByKey(String(key));
+                elements.jmespathPanel.style.display = 'block';
+                elements.filterKey.value = String(key);
+            }
+        }}
+    ];
+
+    items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = item.label;
+        btn.style.cssText = 'display:block;width:100%;padding:6px 12px;text-align:left;background:none;border:none;cursor:pointer;color:var(--text-primary);font-size:13px;';
+        btn.addEventListener('click', () => {
+            item.action();
+            menu.remove();
+        });
+        btn.addEventListener('mouseenter', () => btn.style.background = 'var(--accent-color)');
+        btn.addEventListener('mouseleave', () => btn.style.background = 'none');
+        menu.appendChild(btn);
+    });
+
+    document.body.appendChild(menu);
+
+    const closeMenu = () => {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+    };
+    setTimeout(() => document.addEventListener('click', closeMenu), 10);
+}
+
+function getNodePath(nodeElement) {
+    const keys = [];
+    let current = nodeElement;
+    while (current && !current.classList.contains('root')) {
+        const prev = current.previousElementSibling;
+        if (prev && prev.classList.contains('tree-key')) {
+            const text = prev.textContent.replace('": ', '');
+            keys.unshift(text);
+        }
+        current = current.parentElement?.closest('.tree-node');
+    }
+    return keys.join('.');
 }
 
 function toggleTreeView() {
@@ -417,8 +563,153 @@ function replaceAllMatches() {
 
 function toggleSearchPanel() {
     const visible = elements.searchPanel.style.display !== 'none';
-    elements.searchPanel.style.display = visible ? 'none' : 'flex';
-    if (!visible) elements.searchInput.focus();
+    // Toggle: if closing, just hide; if opening, close others but allow re-opening without forcing close
+    if (visible) {
+        elements.searchPanel.style.display = 'none';
+    } else {
+        elements.searchPanel.style.display = 'flex';
+        elements.searchInput.focus();
+        // Close other panels to avoid overlap
+        elements.jmespathPanel.style.display = 'none';
+        elements.comparePanel.style.display = 'none';
+    }
+}
+
+function toggleJMESPathPanel() {
+    const visible = elements.jmespathPanel.style.display !== 'none';
+    if (visible) {
+        elements.jmespathPanel.style.display = 'none';
+    } else {
+        elements.jmespathPanel.style.display = 'block';
+        elements.jmespathQuery.focus();
+        // Close other panels to avoid overlap
+        elements.searchPanel.style.display = 'none';
+        elements.comparePanel.style.display = 'none';
+    }
+}
+
+function toggleComparePanel() {
+    const visible = elements.comparePanel.style.display !== 'none';
+    if (visible) {
+        elements.comparePanel.style.display = 'none';
+    } else {
+        elements.comparePanel.style.display = 'block';
+        elements.compareJson1.focus();
+        // Close other panels to avoid overlap
+        elements.searchPanel.style.display = 'none';
+        elements.jmespathPanel.style.display = 'none';
+    }
+}
+
+// Clear node selection and hide actions bar
+function clearNodeSelection() {
+    if (state.selectedNode) {
+        state.selectedNode.classList.remove('selected');
+        state.selectedNode = null;
+    }
+    state.selectedNodePath = '';
+    state.selectedNodeValue = null;
+    elements.nodeActionsBar.style.display = 'none';
+    elements.selectedNodePath.textContent = '';
+}
+
+// Copy selected node value
+function copySelectedNode() {
+    if (!state.selectedNodeValue) {
+        showToast('No node selected', 'warning');
+        return;
+    }
+    const text = JSON.stringify(state.selectedNodeValue, null, 2);
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Node copied to clipboard!', 'success');
+    }).catch(() => {
+        showToast('Failed to copy', 'error');
+    });
+}
+
+// Filter by selected node's key
+function filterBySelectedNode() {
+    if (!state.selectedNodePath) {
+        showToast('No node selected', 'warning');
+        return;
+    }
+    // Extract the last key from the path
+    const parts = state.selectedNodePath.split('.');
+    const key = parts[parts.length - 1];
+    
+    if (state.parsedJson) {
+        const filtered = extractValuesByKey(state.parsedJson, key);
+        state.filteredJson = filtered;
+        elements.outputEditor.value = JSON.stringify(filtered, null, 2);
+        elements.treeView.innerHTML = '';
+        renderTreeView(filtered, elements.treeView);
+        showToast(`Filtered ${filtered.length} values for key "${key}"`, 'success');
+    }
+}
+
+// Edit selected node value (opens a prompt for simple editing)
+function editSelectedNode() {
+    if (!state.selectedNodeValue) {
+        showToast('No node selected', 'warning');
+        return;
+    }
+    
+    const currentValue = JSON.stringify(state.selectedNodeValue, null, 2);
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>Edit Node Value</h3>
+                <button class="btn btn-icon" id="closeEditModal">×</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="editNodeTextarea" style="width:100%;height:300px;font-family:var(--font-mono);font-size:14px;" spellcheck="false">${escapeHtml(currentValue)}</textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="cancelEditBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveEditBtn">Save Changes</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Wire up buttons
+    setTimeout(() => {
+        const textarea = document.getElementById('editNodeTextarea');
+        const closeBtn = document.getElementById('closeEditModal');
+        const cancelBtn = document.getElementById('cancelEditBtn');
+        const saveBtn = document.getElementById('saveEditBtn');
+        
+        closeBtn.addEventListener('click', () => modal.remove());
+        cancelBtn.addEventListener('click', () => modal.remove());
+        saveBtn.addEventListener('click', () => {
+            try {
+                const newValue = JSON.parse(textarea.value);
+                // Update the tree view with new value
+                state.selectedNodeValue = newValue;
+                
+                // Re-render tree with updated data
+                if (state.isTreeView) {
+                    renderTreeView(state.parsedJson, elements.treeView);
+                } else {
+                    elements.outputEditor.value = JSON.stringify(state.parsedJson, null, 2);
+                }
+                
+                modal.remove();
+                showToast('Node updated successfully!', 'success');
+            } catch (e) {
+                showToast('Invalid JSON: ' + e.message, 'error');
+            }
+        });
+    }, 50);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 
 // JMESPath Query Engine (Simplified Implementation)
@@ -563,6 +854,11 @@ function filterByKey(data, key) {
     return results;
 }
 
+// Extract values by key - alias for filterByKey used in node actions
+function extractValuesByKey(data, key) {
+    return filterByKey(data, key);
+}
+
 function runJMESPathQuery() {
     const query = elements.jmespathQuery.value.trim();
     const inputJson = elements.inputEditor.value.trim();
@@ -616,12 +912,6 @@ function applyKeyFilter() {
         elements.jmespathResults.innerHTML = '<div class="toast error">Error: ' + e.message + '</div>';
         showToast('Filter failed', 'error');
     }
-}
-
-function toggleJMESPathPanel() {
-    const visible = elements.jmespathPanel.style.display !== 'none';
-    elements.jmespathPanel.style.display = visible ? 'none' : 'block';
-    if (!visible) elements.jmespathQuery.focus();
 }
 
 // Compare
@@ -690,12 +980,6 @@ function displayCompareResults(results) {
         html += '</div>';
     });
     elements.compareResults.innerHTML = html;
-}
-
-function toggleComparePanel() {
-    const visible = elements.comparePanel.style.display !== 'none';
-    elements.comparePanel.style.display = visible ? 'none' : 'block';
-    if (!visible && elements.inputEditor.value) elements.compareJson1.value = elements.inputEditor.value;
 }
 
 // Conversions
@@ -898,6 +1182,12 @@ function initEventListeners() {
     elements.expandAllBtn.addEventListener('click', expandAllTreeNodes);
     elements.collapseAllBtn.addEventListener('click', collapseAllTreeNodes);
     elements.themeToggle.addEventListener('click', toggleTheme);
+    
+    // Node actions bar
+    elements.copyNodeBtn.addEventListener('click', copySelectedNode);
+    elements.filterByNodeBtn.addEventListener('click', filterBySelectedNode);
+    elements.editNodeBtn.addEventListener('click', editSelectedNode);
+    elements.clearSelectionBtn.addEventListener('click', clearNodeSelection);
     
     elements.searchInput.addEventListener('input', e => searchJSON(e.target.value));
     elements.searchNextBtn.addEventListener('click', () => goToSearchMatch(state.currentSearchIndex + 1));
