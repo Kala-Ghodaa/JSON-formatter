@@ -84,6 +84,15 @@
                     </svg>
                     Search
                 </button>
+                <button class="btn" id="jmespathBtn" title="JMESPath Query & Filter">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                        <line x1="8" y1="11" x2="14" y2="11"/>
+                        <line x1="11" y1="8" x2="11" y2="14"/>
+                    </svg>
+                    Query
+                </button>
             </div>
 
             <div class="toolbar-group">
@@ -149,6 +158,40 @@
                 <span id="searchCount" class="search-count"></span>
                 <button class="btn btn-small btn-icon" id="closeSearchBtn" aria-label="Close search">×</button>
             </div>
+            <div class="search-replace-row">
+                <input type="text" id="replaceInput" placeholder="Replace with..." aria-label="Replace">
+                <button class="btn btn-small" id="replaceBtn" title="Replace current match">Replace</button>
+                <button class="btn btn-small" id="replaceAllBtn" title="Replace all matches">Replace All</button>
+            </div>
+        </div>
+
+        <!-- JMESPath & Filter Panel -->
+        <div class="jmespath-panel" id="jmespathPanel" style="display: none;">
+            <div class="jmespath-header">
+                <h3>JMESPath Query & Filter</h3>
+                <button class="btn btn-small btn-icon" id="closeJmespathBtn" aria-label="Close">×</button>
+            </div>
+            <div class="jmespath-inputs">
+                <div class="jmespath-input">
+                    <label for="jmespathQuery">JMESPath Query:</label>
+                    <input type="text" id="jmespathQuery" placeholder="e.g., [?status=='active'].email or *.name or sort_by(@, &age)" aria-label="JMESPath query">
+                    <div class="jmespath-examples">
+                        <span class="example-tag" data-query="[?active==`true`].email">Extract emails</span>
+                        <span class="example-tag" data-query="*.name">All names</span>
+                        <span class="example-tag" data-query="sort_by(@, &age)">Sort by age</span>
+                        <span class="example-tag" data-query="reverse(@)">Reverse</span>
+                        <span class="example-tag" data-query="length(@)">Count</span>
+                        <span class="example-tag" data-query="[?price > `100`].name">Filter price</span>
+                    </div>
+                </div>
+                <div class="filter-input">
+                    <label for="filterKey">Quick Filter by Key:</label>
+                    <input type="text" id="filterKey" placeholder="e.g., email, name, id" aria-label="Filter key">
+                    <button class="btn btn-small btn-primary" id="applyFilterBtn">Apply Filter</button>
+                </div>
+            </div>
+            <button class="btn btn-primary" id="runJmespathBtn">Run Query</button>
+            <div class="jmespath-results" id="jmespathResults"></div>
         </div>
 
         <!-- Compare Panel -->

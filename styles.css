@@ -757,3 +757,127 @@ html, body {
         margin-bottom: 20px;
     }
 }
+
+/* Search Replace Row */
+.search-replace-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    max-width: 600px;
+    margin-top: 8px;
+}
+
+.search-replace-row input {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+
+/* JMESPath Panel */
+.jmespath-panel {
+    padding: 16px 20px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.jmespath-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.jmespath-header h3 {
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.jmespath-inputs {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.jmespath-input label,
+.filter-input label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.jmespath-input input,
+.filter-input input {
+    width: 100%;
+    padding: 10px;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+}
+
+.jmespath-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.example-tag {
+    display: inline-block;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    background: var(--bg-tertiary);
+    color: var(--accent-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.example-tag:hover {
+    background: var(--accent-color);
+    color: white;
+}
+
+.filter-input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.jmespath-results {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    max-height: 300px;
+    overflow: auto;
+}
+
+.jmespath-output {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-primary);
+}
+
+.jmespath-results h4 {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+    .jmespath-inputs {
+        grid-template-columns: 1fr;
+    }
+}

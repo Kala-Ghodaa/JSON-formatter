@@ -14,7 +14,8 @@ const state = {
     searchMatches: [],
     currentSearchIndex: -1,
     isTreeView: false,
-    validateTimeout: null
+    validateTimeout: null,
+    replaceMatches: []
 };
 
 // DOM Elements
@@ -41,6 +42,7 @@ function initElements() {
     elements.treeViewBtn = document.getElementById('treeViewBtn');
     elements.compareBtn = document.getElementById('compareBtn');
     elements.searchBtn = document.getElementById('searchBtn');
+    elements.jmespathBtn = document.getElementById('jmespathBtn');
     elements.downloadBtn = document.getElementById('downloadBtn');
     elements.copyBtn = document.getElementById('copyBtn');
     elements.convertBtn = document.getElementById('convertBtn');
@@ -49,10 +51,20 @@ function initElements() {
     elements.collapseAllBtn = document.getElementById('collapseAllBtn');
     elements.themeToggle = document.getElementById('themeToggle');
     elements.searchInput = document.getElementById('searchInput');
+    elements.replaceInput = document.getElementById('replaceInput');
+    elements.replaceBtn = document.getElementById('replaceBtn');
+    elements.replaceAllBtn = document.getElementById('replaceAllBtn');
     elements.searchNextBtn = document.getElementById('searchNextBtn');
     elements.searchPrevBtn = document.getElementById('searchPrevBtn');
     elements.searchCount = document.getElementById('searchCount');
     elements.closeSearchBtn = document.getElementById('closeSearchBtn');
+    elements.jmespathPanel = document.getElementById('jmespathPanel');
+    elements.jmespathQuery = document.getElementById('jmespathQuery');
+    elements.filterKey = document.getElementById('filterKey');
+    elements.runJmespathBtn = document.getElementById('runJmespathBtn');
+    elements.applyFilterBtn = document.getElementById('applyFilterBtn');
+    elements.closeJmespathBtn = document.getElementById('closeJmespathBtn');
+    elements.jmespathResults = document.getElementById('jmespathResults');
     elements.compareJson1 = document.getElementById('compareJson1');
     elements.compareJson2 = document.getElementById('compareJson2');
     elements.compareResults = document.getElementById('compareResults');
@@ -312,7 +324,7 @@ function collapseAllTreeNodes() {
     });
 }
 
-// Search
+// Search & Replace
 function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -322,6 +334,7 @@ function searchJSON(query) {
         state.searchMatches = [];
         state.currentSearchIndex = -1;
         elements.searchCount.textContent = '';
+        highlightSearchMatches();
         return;
     }
     
@@ -336,7 +349,14 @@ function searchJSON(query) {
     
     state.currentSearchIndex = state.searchMatches.length > 0 ? 0 : -1;
     updateSearchCount();
+    highlightSearchMatches();
     if (state.searchMatches.length > 0) goToSearchMatch(0);
+}
+
+function highlightSearchMatches() {
+    if (state.isTreeView && state.parsedJson) {
+        renderTreeView(state.parsedJson, elements.treeView, state.searchInput.value);
+    }
 }
 
 function updateSearchCount() {
@@ -356,10 +376,252 @@ function goToSearchMatch(index) {
     elements.outputEditor.setSelectionRange(match.index, match.index + match.text.length);
 }
 
+function replaceCurrentMatch() {
+    if (state.searchMatches.length === 0 || state.currentSearchIndex < 0) {
+        showToast('No match selected', 'warning');
+        return;
+    }
+    const replaceText = elements.replaceInput.value;
+    const match = state.searchMatches[state.currentSearchIndex];
+    const output = elements.outputEditor.value;
+    
+    const newText = output.substring(0, match.index) + replaceText + output.substring(match.index + match.text.length);
+    elements.outputEditor.value = newText;
+    
+    searchJSON(state.searchInput.value);
+    showToast('Replaced!', 'success');
+    updateStats();
+}
+
+function replaceAllMatches() {
+    if (state.searchMatches.length === 0) {
+        showToast('No matches to replace', 'warning');
+        return;
+    }
+    const query = state.searchInput.value;
+    const replaceText = elements.replaceInput.value;
+    const output = elements.outputEditor.value;
+    
+    const regex = new RegExp(escapeRegex(query), 'gi');
+    const newText = output.replace(regex, replaceText);
+    elements.outputEditor.value = newText;
+    
+    state.searchMatches = [];
+    state.currentSearchIndex = -1;
+    elements.searchCount.textContent = '';
+    const count = (output.match(regex) || []).length;
+    showToast(`Replaced ${count} occurrences`, 'success');
+    searchJSON('');
+    updateStats();
+}
+
 function toggleSearchPanel() {
     const visible = elements.searchPanel.style.display !== 'none';
     elements.searchPanel.style.display = visible ? 'none' : 'flex';
     if (!visible) elements.searchInput.focus();
+}
+
+// JMESPath Query Engine (Simplified Implementation)
+function evaluateJMESPath(data, query) {
+    try {
+        if (!query || query.trim() === '') return data;
+        const q = query.trim();
+        
+        // Handle *.property pattern
+        if (q.startsWith('*.')) {
+            const prop = q.substring(2);
+            if (Array.isArray(data)) {
+                return data.map(item => item && typeof item === 'object' ? item[prop] : undefined).filter(v => v !== undefined);
+            }
+            if (data && typeof data === 'object') {
+                return Object.values(data).map(item => item && typeof item === 'object' ? item[prop] : undefined).filter(v => v !== undefined);
+            }
+        }
+        
+        // Handle [?condition].property pattern
+        const filterMatch = q.match(/^\[\?([^\]]+)\]\.(.+)$/);
+        if (filterMatch) {
+            const condition = filterMatch[1];
+            const prop = filterMatch[2];
+            if (!Array.isArray(data)) return [];
+            
+            return data.filter(item => {
+                if (!item || typeof item !== 'object') return false;
+                const condMatch = condition.match(/([a-zA-Z_$][\w$]*)\s*(==|!=|>|<|>=|<=)\s*(?:`([^`]*)`|'([^']*)'|"([^"]*)"|(\d+\.?\d*))/);
+                if (condMatch) {
+                    const field = condMatch[1];
+                    const op = condMatch[2];
+                    let value = condMatch[3] || condMatch[4] || condMatch[5] || condMatch[6];
+                    const itemVal = item[field];
+                    
+                    if (op === '==') {
+                        if (value === 'true') return itemVal === true;
+                        if (value === 'false') return itemVal === false;
+                        const numVal = parseFloat(value);
+                        if (!isNaN(numVal)) return itemVal == numVal;
+                        return String(itemVal) === value || itemVal == value;
+                    }
+                    if (op === '!=') {
+                        if (value === 'true') return itemVal !== true;
+                        if (value === 'false') return itemVal !== false;
+                        return String(itemVal) !== value && itemVal != value;
+                    }
+                    const numValue = parseFloat(value);
+                    if (typeof itemVal === 'number') {
+                        if (op === '>') return itemVal > numValue;
+                        if (op === '<') return itemVal < numValue;
+                        if (op === '>=') return itemVal >= numValue;
+                        if (op === '<=') return itemVal <= numValue;
+                    }
+                }
+                return false;
+            }).map(item => item[prop]).filter(v => v !== undefined);
+        }
+        
+        // Handle simple filter [?condition]
+        const simpleFilterMatch = q.match(/^\[\?([^\]]+)\]$/);
+        if (simpleFilterMatch) {
+            const condition = simpleFilterMatch[1];
+            if (!Array.isArray(data)) return [];
+            
+            return data.filter(item => {
+                if (!item || typeof item !== 'object') return false;
+                const condMatch = condition.match(/([a-zA-Z_$][\w$]*)\s*(==|!=)\s*(?:`([^`]*)`|'([^']*)'|"([^"]*)")/);
+                if (condMatch) {
+                    const field = condMatch[1];
+                    const op = condMatch[2];
+                    const value = condMatch[3] || condMatch[4] || condMatch[5];
+                    const itemVal = item[field];
+                    if (op === '==') return String(itemVal) === value || itemVal == value || (value === 'true' && itemVal === true);
+                    if (op === '!=') return String(itemVal) !== value || itemVal != value;
+                }
+                return false;
+            });
+        }
+        
+        // Handle sort_by(@, &property)
+        const sortByMatch = q.match(/^sort_by\(@,\s*&([a-zA-Z_$][\w$]*)\)$/);
+        if (sortByMatch) {
+            const prop = sortByMatch[1];
+            if (!Array.isArray(data)) return data;
+            return [...data].sort((a, b) => {
+                const aVal = a && a[prop];
+                const bVal = b && b[prop];
+                if (typeof aVal === 'number' && typeof bVal === 'number') return aVal - bVal;
+                return String(aVal || '').localeCompare(String(bVal || ''));
+            });
+        }
+        
+        // Handle reverse(@)
+        if (q === 'reverse(@)' && Array.isArray(data)) {
+            return [...data].reverse();
+        }
+        
+        // Handle length(@)
+        if (q === 'length(@)') {
+            if (Array.isArray(data)) return data.length;
+            if (data && typeof data === 'object') return Object.keys(data).length;
+            return 0;
+        }
+        
+        // Handle .property pattern
+        if (q.startsWith('.')) {
+            const prop = q.substring(1);
+            if (Array.isArray(data)) {
+                return data.map(item => item && typeof item === 'object' ? item[prop] : undefined).filter(v => v !== undefined);
+            }
+            return data && typeof data === 'object' ? data[prop] : undefined;
+        }
+        
+        // Handle direct property access
+        if (/^[a-zA-Z_$][\w$]*$/.test(q)) {
+            if (Array.isArray(data)) {
+                return data.map(item => item && typeof item === 'object' ? item[q] : undefined).filter(v => v !== undefined);
+            }
+            return data && typeof data === 'object' ? data[q] : undefined;
+        }
+        
+        return data;
+    } catch (e) {
+        throw new Error('JMESPath error: ' + e.message);
+    }
+}
+
+function filterByKey(data, key) {
+    const results = [];
+    function search(obj) {
+        if (obj && typeof obj === 'object') {
+            if (Array.isArray(obj)) {
+                obj.forEach(search);
+            } else {
+                if (key in obj) results.push(obj[key]);
+                Object.values(obj).forEach(search);
+            }
+        }
+    }
+    search(data);
+    return results;
+}
+
+function runJMESPathQuery() {
+    const query = elements.jmespathQuery.value.trim();
+    const inputJson = elements.inputEditor.value.trim();
+    
+    if (!inputJson) {
+        showToast('Please enter JSON first', 'warning');
+        return;
+    }
+    
+    const result = validateJSON(inputJson);
+    if (!result.valid) {
+        showToast('Invalid JSON in input', 'error');
+        return;
+    }
+    
+    try {
+        const output = evaluateJMESPath(result.data, query);
+        elements.jmespathResults.innerHTML = '<pre class="jmespath-output">' + JSON.stringify(output, null, 2) + '</pre>';
+        showToast('Query executed!', 'success');
+    } catch (e) {
+        elements.jmespathResults.innerHTML = '<div class="toast error">Error: ' + e.message + '</div>';
+        showToast('Query failed', 'error');
+    }
+}
+
+function applyKeyFilter() {
+    const key = elements.filterKey.value.trim();
+    const inputJson = elements.inputEditor.value.trim();
+    
+    if (!key) {
+        showToast('Please enter a key name', 'warning');
+        return;
+    }
+    
+    if (!inputJson) {
+        showToast('Please enter JSON first', 'warning');
+        return;
+    }
+    
+    const result = validateJSON(inputJson);
+    if (!result.valid) {
+        showToast('Invalid JSON in input', 'error');
+        return;
+    }
+    
+    try {
+        const output = filterByKey(result.data, key);
+        elements.jmespathResults.innerHTML = '<h4>Found ' + output.length + ' match(es) for key "' + key + '":</h4><pre class="jmespath-output">' + JSON.stringify(output, null, 2) + '</pre>';
+        showToast('Found ' + output.length + ' match(es)', 'success');
+    } catch (e) {
+        elements.jmespathResults.innerHTML = '<div class="toast error">Error: ' + e.message + '</div>';
+        showToast('Filter failed', 'error');
+    }
+}
+
+function toggleJMESPathPanel() {
+    const visible = elements.jmespathPanel.style.display !== 'none';
+    elements.jmespathPanel.style.display = visible ? 'none' : 'block';
+    if (!visible) elements.jmespathQuery.focus();
 }
 
 // Compare
@@ -645,6 +907,25 @@ function initEventListeners() {
         elements.searchInput.value = '';
         searchJSON('');
     });
+
+    // Replace functionality
+    elements.replaceBtn.addEventListener('click', replaceCurrentMatch);
+    elements.replaceAllBtn.addEventListener('click', replaceAllMatches);
+    
+    // JMESPath panel
+    elements.jmespathBtn.addEventListener('click', toggleJMESPathPanel);
+    elements.runJmespathBtn.addEventListener('click', runJMESPathQuery);
+    elements.applyFilterBtn.addEventListener('click', applyKeyFilter);
+    elements.closeJmespathBtn.addEventListener('click', () => elements.jmespathPanel.style.display = 'none');
+    
+    // Example tags for JMESPath
+    document.querySelectorAll('.example-tag').forEach(tag => {
+        tag.addEventListener('click', () => {
+            elements.jmespathQuery.value = tag.dataset.query;
+            runJMESPathQuery();
+        });
+    });
+
     
     elements.doCompareBtn.addEventListener('click', () => {
         if (!elements.compareJson1.value || !elements.compareJson2.value) {
