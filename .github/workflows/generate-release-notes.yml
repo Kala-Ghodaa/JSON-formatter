@@ -54,12 +54,17 @@ jobs:
           ENVIRONMENT: ${{ inputs.environment }}
           USE_AI: ${{ inputs.use_ai_summarization }}
         run: |
-          python scripts/generate_release_notes.py \
-            --from "$DATE_FROM" \
-            --to "$DATE_TO" \
-            --environment "$ENVIRONMENT" \
-            --use-ai "$USE_AI"
-
+          CMD="python scripts/generate_release_notes.py \
+            --from \"$DATE_FROM\" \
+            --to \"$DATE_TO\" \
+            --environment \"$ENVIRONMENT\""
+      
+          if [ "$USE_AI" = "true" ]; then
+            CMD="$CMD --use-ai"
+          fi
+      
+          echo "$CMD"
+          eval "$CMD"
       - name: Display release notes
         run: cat release-notes.md
 
