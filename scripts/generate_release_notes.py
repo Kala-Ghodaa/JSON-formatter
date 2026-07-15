@@ -107,8 +107,8 @@ def get_merged_prs_in_range(gh: Github, repo_name: str, from_date: str, to_date:
         return []
 
 
-def get_diff_for_pr(base_ref: str, head_ref: str) -> dict:
-    """Get git diff between base and head refs for a PR.
+def get_diff_for_pr(pr_number: int, base_ref: str, head_ref: str) -> dict:
+    """Get git diff for a PR using GitHub API or local git.
     
     Returns dict with:
     - files_changed: list of file paths
@@ -116,7 +116,60 @@ def get_diff_for_pr(base_ref: str, head_ref: str) -> dict:
     - deletions: total lines removed
     - diff_content: full diff text
     """
+    # Try to get diff from GitHub API first (more reliable)
+    token = os.environ.get('GH_TOKEN', os.environ.get('GITHUB_TOKEN', ''))
+    repo_name = os.environ.get('GITHUB_REPOSITORY', '')
+    
+    if token and repo_name:
+        try:
+            url = f"https://api.github.com/repos/{repo_name}/pulls/{pr_number}"
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3.diff"
+            }
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                diff_content = response.text
+                
+                # Parse diff to extract stats
+                files_changed = []
+                additions = 0
+                deletions = 0
+                
+                for line in diff_content.split('\n'):
+                    if line.startswith('+++ '):
+                        filename = line[4:].strip()
+                        # Remove b/ prefix if present
+                        if filename.startswith('b/'):
+                            filename = filename[2:]
+                        if filename and not filename.startswith('/dev/null'):
+                            files_changed.append(filename)
+                    elif line.startswith('+') and not line.startswith('+++'):
+                        additions += 1
+                    elif line.startswith('-') and not line.startswith('---'):
+                        deletions += 1
+                
+                return {
+                    'files_changed': list(set(files_changed)),
+                    'additions': additions,
+                    'deletions': deletions,
+                    'diff_content': diff_content[:50000]  # Limit size
+                }
+        except Exception as e:
+            print(f"  Note: Could not fetch diff from API: {e}, falling back to git diff")
+    
+    # Fallback: Try local git diff
     try:
+        # First, try to fetch the PR branch if it's a remote ref
+        if head_ref and not head_ref.startswith('refs/heads/'):
+            try:
+                # Try fetching the specific PR
+                run_command(["git", "fetch", "origin", f"pull/{pr_number}/head:pr-{pr_number}", "--force"], capture_output=True)
+                head_ref = f"pr-{pr_number}"
+            except Exception:
+                pass
+        
         # Get diff stats
         stat_cmd = ["git", "diff", f"{base_ref}...{head_ref}", "--stat"]
         stat_output = run_command(stat_cmd)
@@ -400,7 +453,9 @@ def main():
         print("Warning: No GitHub token found. Set GH_TOKEN or GITHUB_TOKEN environment variable.")
         gh = None
     else:
-        gh = Github(token)
+        from github import Auth
+        auth = Auth.Token(token)
+        gh = Github(auth=auth)
     
     # Get repository name
     repo_name = os.environ.get('GITHUB_REPOSITORY', '')
@@ -436,7 +491,7 @@ def main():
                 
                 # Get diff for this PR
                 try:
-                    diff_data = get_diff_for_pr(pr['base_ref'], pr['head_ref'])
+                    diff_data = get_diff_for_pr(pr['number'], pr['base_ref'], pr['head_ref'])
                     print(f"  Files changed: {len(diff_data['files_changed'])}, +{diff_data['additions']}/-{diff_data['deletions']} lines")
                 except Exception as e:
                     print(f"  Warning: Could not get diff: {e}")
