@@ -52,6 +52,48 @@ RISK_INDICATORS = [
     "schema change", "api change", "backward incompatible"
 ]
 
+# Markers delimiting the auto-generated summary block inside a PR body. Text
+# outside these markers (the author's own description) is always preserved.
+RN_START = "<!-- RELEASE-NOTES:START -->"
+RN_END = "<!-- RELEASE-NOTES:END -->"
+
+
+def build_summary_block(summary_points: list[str], risks: list[str]) -> str:
+    """Render the marked release-notes block for a PR body."""
+    lines = [RN_START, "### 📝 Release Notes Summary", ""]
+    for point in summary_points:
+        lines.append(f"- {point}")
+    if risks:
+        lines.append("")
+        lines.append("**⚠️ Risks / Breaking Changes:**")
+        for risk in risks:
+            lines.append(f"- {risk}")
+    lines.append("")
+    lines.append("_Auto-generated from the diff. Edit outside the markers freely._")
+    lines.append(RN_END)
+    return "\n".join(lines)
+
+
+def upsert_summary_in_body(body: str, block: str) -> str:
+    """Insert or replace the marked block in a PR body without touching the
+    author's own text. Replaces between existing markers if both present,
+    otherwise appends the block to the end."""
+    body = body or ""
+    if RN_START in body and RN_END in body:
+        pre = body.split(RN_START, 1)[0]
+        post = body.split(RN_END, 1)[1]
+        return f"{pre.rstrip()}\n\n{block}\n{post.lstrip()}".strip() + "\n"
+    base = body.rstrip()
+    return (f"{base}\n\n{block}" if base else block)
+
+
+def extract_summary_block(body: str) -> str:
+    """Return the text between the markers (without the markers), or ""."""
+    body = body or ""
+    if RN_START in body and RN_END in body:
+        return body.split(RN_START, 1)[1].split(RN_END, 1)[0].strip()
+    return ""
+
 
 def run_command(cmd: list[str], cwd: Optional[str] = None) -> str:
     """Run a shell command and return the output."""
@@ -282,13 +324,17 @@ def generate_markdown(changes: dict, environment: str, date_from: str, date_to: 
 
 
 def summarize_with_llm(pr_data: dict, diff_data: dict, api_endpoint: Optional[str] = None,
-                        api_key: Optional[str] = None, model: str = "openai/gpt-4o-mini") -> dict:
+                        api_key: Optional[str] = None, model: str = "openai/gpt-4o-mini",
+                        existing_summary: str = "") -> dict:
     """
     Send PR diff to LLM for intelligent summarization.
 
     Args:
         pr_data: PR metadata (title, labels, etc.)
         diff_data: Git diff data (files, additions, deletions, content)
+        existing_summary: Optional prior summary (e.g. from the PR body block).
+            Passed to the model as a hint only; the diff remains the source of
+            truth, so a stale block can't produce wrong notes.
         api_endpoint: Optional LLM API endpoint. Three contracts are supported:
             - Anthropic Messages API (endpoint contains "anthropic.com"):
               x-api-key auth, message format, content-block parsing.
@@ -316,11 +362,19 @@ def summarize_with_llm(pr_data: dict, diff_data: dict, api_endpoint: Optional[st
     deletions = diff_data.get('deletions', 0)
     diff_content = diff_data.get('diff_content', '')
 
+    hint_block = ""
+    if existing_summary.strip():
+        hint_block = (
+            "\nA prior summary exists (may be stale — use only as a hint, verify "
+            "everything against the diff below):\n"
+            f"{existing_summary.strip()}\n"
+        )
+
     prompt = f"""Analyze these code changes and generate release notes.
 
 PR Title: {pr_data.get('title', 'Unknown')}
 Labels: {', '.join(pr_data.get('labels', []))}
-
+{hint_block}
 Files Changed ({len(files_changed)} files, +{additions}/-{deletions} lines):
 {chr(10).join(files_changed[:20])}
 
@@ -653,11 +707,59 @@ def detect_risks(pr: Optional[dict], message: str) -> list[str]:
 # --------------------------------------------------------------------------
 
 
+def summarize_single_pr(gh: Github, repo_name: str, pr_number: int,
+                        llm_endpoint: Optional[str], llm_key: Optional[str],
+                        model: str) -> bool:
+    """Summarize one PR from its diff and write the summary into the PR body
+    (inside the marked block). Returns True on success."""
+    try:
+        repo = gh.get_repo(repo_name)
+        pr = repo.get_pull(pr_number)
+    except Exception as e:
+        print(f"Error: could not load PR #{pr_number} from {repo_name}: {e}")
+        return False
+
+    print(f"Summarizing PR #{pr.number}: {pr.title}")
+
+    pr_data = {
+        'title': pr.title,
+        'labels': [label.name for label in pr.labels],
+        'body': pr.body or '',
+    }
+
+    diff_data = get_diff_for_pr(pr.base.sha, pr.head.sha)
+    print(f"  Files changed: {len(diff_data['files_changed'])}, "
+          f"+{diff_data['additions']}/-{diff_data['deletions']} lines")
+
+    result = summarize_with_llm(pr_data, diff_data, api_endpoint=llm_endpoint,
+                                api_key=llm_key, model=model)
+
+    block = build_summary_block(result.get('summary', []), result.get('risks', []))
+    new_body = upsert_summary_in_body(pr.body or "", block)
+
+    if new_body == (pr.body or ""):
+        print("  PR body already up to date; nothing to write.")
+        return True
+
+    try:
+        pr.edit(body=new_body)
+    except Exception as e:
+        print(f"Error: could not update PR body: {e}")
+        return False
+
+    print("  ✓ Wrote release-notes summary into PR body")
+    print("-" * 50)
+    print(block)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate release notes from Git history")
-    parser.add_argument("--from", dest="date_from", required=True, help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--to", dest="date_to", required=True, help="End date (YYYY-MM-DD)")
-    parser.add_argument("--environment", required=True, choices=["dev", "qa"], help="Target environment")
+    parser.add_argument("--from", dest="date_from", help="Start date (YYYY-MM-DD)")
+    parser.add_argument("--to", dest="date_to", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--environment", choices=["dev", "qa"], help="Target environment")
+    parser.add_argument("--pr-number", dest="pr_number", type=int, default=None,
+                         help="Summarize a single PR into its body instead of generating range notes")
     parser.add_argument("--use-ai", dest="use_ai", action="store_true", help="Use AI for summarization")
     parser.add_argument("--llm-api", dest="llm_api", default=None, help="LLM API endpoint for intelligent summarization")
     parser.add_argument("--llm-api-key", dest="llm_api_key", default=None,
@@ -669,17 +771,30 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate dates
-    try:
-        datetime.strptime(args.date_from, "%Y-%m-%d")
-        datetime.strptime(args.date_to, "%Y-%m-%d")
-    except ValueError as e:
-        print(f"Error: Invalid date format. Use YYYY-MM-DD. {e}")
-        sys.exit(1)
+    pr_mode = args.pr_number is not None
 
-    print(f"Generating release notes for {args.environment.upper()}")
-    print(f"Date range: {args.date_from} to {args.date_to}")
-    print("-" * 50)
+    if pr_mode:
+        # In PR-summary mode range args are irrelevant; AI is always used.
+        args.use_ai = True
+    else:
+        missing = [name for name, val in
+                   (("--from", args.date_from), ("--to", args.date_to),
+                    ("--environment", args.environment)) if not val]
+        if missing:
+            print(f"Error: {', '.join(missing)} required (or use --pr-number for single-PR mode)")
+            sys.exit(1)
+
+        # Validate dates
+        try:
+            datetime.strptime(args.date_from, "%Y-%m-%d")
+            datetime.strptime(args.date_to, "%Y-%m-%d")
+        except ValueError as e:
+            print(f"Error: Invalid date format. Use YYYY-MM-DD. {e}")
+            sys.exit(1)
+
+        print(f"Generating release notes for {args.environment.upper()}")
+        print(f"Date range: {args.date_from} to {args.date_to}")
+        print("-" * 50)
 
     # Initialize GitHub client
     token = os.environ.get('GH_TOKEN', os.environ.get('GITHUB_TOKEN', ''))
@@ -718,6 +833,15 @@ def main():
     if llm_endpoint and "models.github.ai" in llm_endpoint and not llm_key:
         llm_key = token
 
+    # Single-PR mode: summarize the PR and write it into the PR body, then exit.
+    if pr_mode:
+        if not gh or not repo_name:
+            print("Error: PR-summary mode needs a GitHub token and repository.")
+            sys.exit(1)
+        ok = summarize_single_pr(gh, repo_name, args.pr_number,
+                                 llm_endpoint, llm_key, args.llm_model)
+        sys.exit(0 if ok else 1)
+
     if not llm_endpoint:
         print("\n" + "!" * 70)
         print("NOTE: Running WITHOUT AI summarization (heuristic mode only).")
@@ -748,8 +872,13 @@ def main():
                     print(f"  Warning: Could not get diff: {e}")
                     diff_data = {'files_changed': [], 'additions': 0, 'deletions': 0, 'diff_content': ''}
 
+                # Reuse any summary the PR-summary workflow already wrote into
+                # the body as a hint; the diff stays the source of truth.
+                prior_summary = extract_summary_block(pr.get('body', ''))
+
                 summary_result = summarize_with_llm(pr, diff_data, api_endpoint=llm_endpoint,
-                                                    api_key=llm_key, model=args.llm_model)
+                                                    api_key=llm_key, model=args.llm_model,
+                                                    existing_summary=prior_summary)
 
                 category = summary_result.get('category', 'technical')
                 if category not in changes:
