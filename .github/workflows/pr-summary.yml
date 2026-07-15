@@ -1,0 +1,41 @@
+name: PR Summary
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write   # edit the PR body
+  models: read           # GitHub Models inference
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # need base + head history for the diff
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install PyGithub requests
+
+      - name: Summarize PR into body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python scripts/generate_release_notes.py \
+            --pr-number ${{ github.event.pull_request.number }} \
+            --use-ai \
+            --llm-api https://models.github.ai/inference/chat/completions \
+            --llm-api-key "$GH_TOKEN"
