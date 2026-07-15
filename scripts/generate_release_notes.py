@@ -4,6 +4,7 @@ Release Notes Generator
 
 Generates release notes by analyzing Git commits, mapping them to PRs,
 and categorizing changes based on labels and commit conventions.
+Now includes git diff analysis to provide detailed insights about code changes.
 
 Usage:
     python generate_release_notes.py --from 2026-07-01 --to 2026-07-14 --environment qa
@@ -112,6 +113,134 @@ def get_commits_in_range(from_date: str, to_date: str) -> list[dict]:
     return commits
 
 
+def get_diff_for_commit(sha: str) -> str:
+    """Get the full diff for a specific commit."""
+    cmd = [
+        "git", "diff",
+        f"{sha}^..{sha}",
+        "--stat"
+    ]
+    
+    try:
+        output = run_command(cmd)
+        return output
+    except RuntimeError:
+        # For initial commits or edge cases
+        cmd = ["git", "show", sha, "--stat"]
+        return run_command(cmd)
+
+
+def get_full_diff_for_commit(sha: str) -> str:
+    """Get the complete diff with content for a specific commit."""
+    cmd = [
+        "git", "show",
+        sha,
+        "--format=",  # No commit metadata
+        "--unified=0"  # Minimal context
+    ]
+    
+    try:
+        output = run_command(cmd)
+        return output
+    except RuntimeError:
+        return ""
+
+
+def analyze_code_changes(diff_content: str, commit_message: str) -> dict:
+    """
+    Analyze code changes from diff to extract meaningful information.
+    
+    Returns a dict with:
+    - files_changed: list of files modified
+    - additions: number of lines added
+    - deletions: number of lines removed
+    - key_changes: summary of significant changes
+    - affected_components: inferred components/modules
+    """
+    result = {
+        'files_changed': [],
+        'additions': 0,
+        'deletions': 0,
+        'key_changes': [],
+        'affected_components': set()
+    }
+    
+    if not diff_content:
+        return result
+    
+    lines = diff_content.split('\n')
+    current_file = None
+    
+    for line in lines:
+        # Track file changes - improved pattern matching
+        if line.startswith('diff --git'):
+            # Extract filename from diff header (handle both a/ and b/ prefixes)
+            matches = re.findall(r'[ab]/([^\s]+)', line)
+            if matches:
+                # Use the second match (b/ side) as it's the new file
+                current_file = matches[-1] if len(matches) > 1 else matches[0]
+                # Avoid duplicates
+                if current_file not in result['files_changed']:
+                    result['files_changed'].append(current_file)
+        
+        # Count additions and deletions
+        elif line.startswith('+') and not line.startswith('+++'):
+            result['additions'] += 1
+        elif line.startswith('-') and not line.startswith('---'):
+            result['deletions'] += 1
+        
+        # Detect significant patterns in added lines
+        if line.startswith('+') and not line.startswith('+++'):
+            line_lower = line.lower()
+            
+            # Skip detection in comments, imports, and common non-functional code
+            if line.strip().startswith('#') or line.strip().startswith('//') or line.strip().startswith('*'):
+                continue
+            
+            # API changes - look for actual API definitions
+            if re.search(r'(api|endpoint)\s*(=|:|def|route)', line_lower):
+                result['key_changes'].append('API modification detected')
+            
+            # Database changes - look for actual DB operations
+            if re.search(r'(migration|schema|table|database)\s*(create|alter|drop|modify)', line_lower):
+                result['key_changes'].append('Database schema change detected')
+            
+            # Configuration changes - look for config definitions
+            if re.search(r'(config|setting)\s*(=|:|load|get)', line_lower) and 'import' not in line_lower:
+                result['key_changes'].append('Configuration change detected')
+            
+            # UI/Frontend changes - look for component definitions
+            if any(re.search(rf'{x}\s*(=|:|<|def)', line_lower) for x in ['component', 'ui', 'frontend']):
+                result['key_changes'].append('UI/Frontend change detected')
+            
+            # Test changes - look for test functions/classes
+            if re.search(r'test\s*(def|class|func|it|describe)', line_lower):
+                result['key_changes'].append('Test modification detected')
+    
+    # Infer affected components from file paths
+    for file_path in result['files_changed']:
+        # Clean up file path (remove any git diff artifacts)
+        clean_path = file_path.split()[-1] if ' ' in file_path else file_path
+        parts = clean_path.split('/')
+        if len(parts) > 1:
+            result['affected_components'].add(parts[0])
+        if len(parts) > 2:
+            result['affected_components'].add(f"{parts[0]}/{parts[1]}")
+    
+    result['affected_components'] = list(result['affected_components'])
+    
+    # Deduplicate key_changes while preserving order
+    seen = set()
+    unique_key_changes = []
+    for change in result['key_changes']:
+        if change not in seen:
+            seen.add(change)
+            unique_key_changes.append(change)
+    result['key_changes'] = unique_key_changes
+    
+    return result
+
+
 def get_pr_for_commit(gh: Github, repo_name: str, sha: str) -> Optional[dict]:
     """Get the pull request associated with a commit."""
     try:
@@ -215,7 +344,8 @@ def detect_risks(pr: dict, commit_message: str) -> list[str]:
     return risks
 
 
-def format_change_entry(pr: dict, commit_message: str, ticket_id: Optional[str]) -> str:
+def format_change_entry(pr: dict, commit_message: str, ticket_id: Optional[str], 
+                       code_analysis: Optional[dict] = None) -> str:
     """Format a single change entry for the release notes."""
     title = pr.get('title', commit_message)
     number = pr.get('number')
@@ -233,6 +363,36 @@ def format_change_entry(pr: dict, commit_message: str, ticket_id: Optional[str])
         entry_parts.append(f"(#{number})")
     
     entry = " ".join(entry_parts)
+    
+    # Add code analysis insights if available
+    if code_analysis:
+        details = []
+        
+        # Add files changed summary
+        files_changed = code_analysis.get('files_changed', [])
+        if files_changed:
+            if len(files_changed) == 1:
+                details.append(f"Modified: {files_changed[0]}")
+            elif len(files_changed) <= 3:
+                details.append(f"Modified: {', '.join(files_changed)}")
+            else:
+                details.append(f"Modified: {len(files_changed)} files")
+        
+        # Add line changes
+        additions = code_analysis.get('additions', 0)
+        deletions = code_analysis.get('deletions', 0)
+        if additions > 0 or deletions > 0:
+            details.append(f"+{additions}/-{deletions} lines")
+        
+        # Add key changes detected
+        key_changes = code_analysis.get('key_changes', [])
+        if key_changes:
+            unique_changes = list(set(key_changes))[:2]  # Limit to 2 most relevant
+            if unique_changes:
+                details.append(f"[{', '.join(unique_changes)}]")
+        
+        if details:
+            entry += f" - {'; '.join(details)}"
     
     # Add author info optionally
     # entry += f" by @{author}"
@@ -386,15 +546,34 @@ def main():
             # Extract ticket ID
             ticket_id = extract_ticket_id(message) or extract_ticket_id(pr.get('title', ''))
             
-            # Categorize
+            # Get and analyze code diff
+            print(f"  Analyzing code changes for {sha[:8]}...")
+            diff_content = get_full_diff_for_commit(sha)
+            code_analysis = analyze_code_changes(diff_content, message)
+            
+            # Categorize based on both PR labels and code analysis
             category = categorize_change(pr, message)
             
-            # Format entry
-            entry = format_change_entry(pr, message, ticket_id)
+            # Override category if code analysis suggests otherwise
+            if code_analysis['key_changes']:
+                key_changes_lower = [c.lower() for c in code_analysis['key_changes']]
+                if any('database' in c for c in key_changes_lower):
+                    category = 'database'
+                elif any('api' in c for c in key_changes_lower):
+                    category = 'features'
+                elif any('test' in c for c in key_changes_lower):
+                    category = 'tests'
+            
+            # Format entry with code analysis insights
+            entry = format_change_entry(pr, message, ticket_id, code_analysis)
             changes[category].append(entry)
             
-            # Detect risks
+            # Detect risks (including from code analysis)
             risks = detect_risks(pr, message)
+            if code_analysis.get('key_changes'):
+                for change in code_analysis['key_changes']:
+                    if 'schema' in change.lower() or 'breaking' in change.lower():
+                        risks.append(change)
             if risks:
                 changes['_risks'][sha] = risks
         
