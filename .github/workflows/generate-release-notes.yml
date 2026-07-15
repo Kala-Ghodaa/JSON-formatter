@@ -25,6 +25,7 @@ on:
 permissions:
   contents: write
   pull-requests: read
+  models: read
 
 jobs:
   generate-release-notes:
@@ -32,12 +33,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -54,12 +55,19 @@ jobs:
           ENVIRONMENT: ${{ inputs.environment }}
           USE_AI: ${{ inputs.use_ai_summarization }}
         run: |
-          python scripts/generate_release_notes.py \
-            --from "$DATE_FROM" \
-            --to "$DATE_TO" \
-            --environment "$ENVIRONMENT" \
-            --use-ai "$USE_AI"
-
+          CMD="python scripts/generate_release_notes.py \
+            --from \"$DATE_FROM\" \
+            --to \"$DATE_TO\" \
+            --environment \"$ENVIRONMENT\""
+      
+          if [ "$USE_AI" = "true" ]; then
+            CMD="$CMD --use-ai \
+              --llm-api https://models.github.ai/inference/chat/completions \
+              --llm-api-key \"$GH_TOKEN\""
+          fi
+      
+          echo "$CMD"
+          eval "$CMD"
       - name: Display release notes
         run: cat release-notes.md
 
