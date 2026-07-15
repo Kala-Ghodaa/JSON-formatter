@@ -188,11 +188,31 @@ def get_diff_for_pr(base_sha: str, head_sha: str) -> dict:
                 if del_match:
                     deletions += int(del_match.group(1))
 
+        # Extract lightweight structural signal from the raw diff so the
+        # heuristic fallback (used when AI summarization isn't configured or
+        # fails) has something more concrete to report than a filename guess.
+        new_files = re.findall(r'^diff --git a/\S+ b/(\S+)\nnew file mode', diff_content, re.MULTILINE)
+        deleted_files = re.findall(r'^diff --git a/(\S+) b/\S+\ndeleted file mode', diff_content, re.MULTILINE)
+
+        # Git includes the enclosing function/section name after the second
+        # "@@" in a hunk header when it can detect one (e.g. "@@ -10,7 +10,9 @@ def foo():")
+        raw_contexts = re.findall(r'^@@[^@]*@@[ \t]+(.+)$', diff_content, re.MULTILINE)
+        hunk_contexts = []
+        seen_contexts = set()
+        for ctx in raw_contexts:
+            ctx = ctx.strip()
+            if ctx and ctx not in seen_contexts:
+                seen_contexts.add(ctx)
+                hunk_contexts.append(ctx)
+
         return {
             'files_changed': files_changed,
             'additions': additions,
             'deletions': deletions,
-            'diff_content': diff_content[:50000]  # Limit size for API calls
+            'diff_content': diff_content[:50000],  # Limit size for API calls
+            'new_files': new_files,
+            'deleted_files': deleted_files,
+            'hunk_contexts': hunk_contexts[:10]
         }
 
     except Exception as e:
@@ -201,7 +221,10 @@ def get_diff_for_pr(base_sha: str, head_sha: str) -> dict:
             'files_changed': [],
             'additions': 0,
             'deletions': 0,
-            'diff_content': ''
+            'diff_content': '',
+            'new_files': [],
+            'deleted_files': [],
+            'hunk_contexts': []
         }
 
 
@@ -361,21 +384,47 @@ Respond with ONLY a JSON object (no markdown fences, no other text) in this form
             'risks': result.get('risks', [])
         }
 
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else "?"
+        body = e.response.text[:300] if e.response is not None else ""
+        print(f"  LLM API call failed: HTTP {status} - {body}")
     except Exception as e:
-        print(f"  LLM API call failed: {e}, using heuristic fallback")
+        print(f"  LLM API call failed: {e}")
+
+    print("  Using heuristic fallback for this PR")
 
     # Fallback to heuristic approach
     return _heuristic_summary(pr_data, diff_data)
 
 
+def _truncated_list(items: list[str], limit: int = 5) -> str:
+    """Join a list for display, noting how many extra items were omitted."""
+    shown = ", ".join(items[:limit])
+    remaining = len(items) - limit
+    if remaining > 0:
+        shown += f", and {remaining} more"
+    return shown
+
+
 def _heuristic_summary(pr_data: dict, diff_data: dict) -> dict:
-    """Fallback heuristic-based summarization when LLM is not available."""
+    """Fallback heuristic-based summarization when LLM is not available.
+
+    NOTE: this is a mechanical fallback, not a real understanding of the
+    change. It reports what files/functions were touched, which is far more
+    useful than a raw PR title (especially for bots/agents that generate
+    generic titles like "Update from task <uuid>"), but it still can't
+    describe *why* a change was made or what it accomplishes for users.
+    For that, use --use-ai with a working --llm-api endpoint.
+    """
 
     title = pr_data.get('title', 'Changes')
     labels = [l.lower() for l in pr_data.get('labels', [])]
     files_changed = diff_data.get('files_changed', [])
     additions = diff_data.get('additions', 0)
     deletions = diff_data.get('deletions', 0)
+    new_files = diff_data.get('new_files', [])
+    deleted_files = diff_data.get('deleted_files', [])
+    hunk_contexts = diff_data.get('hunk_contexts', [])
 
     # Determine category from labels
     category = 'technical'
@@ -390,37 +439,55 @@ def _heuristic_summary(pr_data: dict, diff_data: dict) -> dict:
     elif any(l in ['test', 'testing'] for l in labels):
         category = 'tests'
 
-    # Generate summary based on file types and changes
     summary_points = []
 
-    has_api = any('api' in f or 'route' in f or 'endpoint' in f for f in files_changed)
-    has_db = any('migration' in f or 'schema' in f or 'model' in f for f in files_changed)
-    has_ui = any('component' in f or 'ui' in f or 'page' in f or 'view' in f for f in files_changed)
-    has_test = any('test' in f for f in files_changed)
-    has_config = any('config' in f or 'setting' in f for f in files_changed)
+    # Prefer concrete signal pulled straight from the diff over filename
+    # guessing: which files were added/removed, and which functions/sections
+    # the hunks touched (git surfaces this in the "@@ ... @@ context" line
+    # for most common languages).
+    if new_files:
+        summary_points.append(f"Added new file(s): {_truncated_list(new_files)}")
+    if deleted_files:
+        summary_points.append(f"Removed file(s): {_truncated_list(deleted_files)}")
+    if hunk_contexts:
+        summary_points.append(f"Changed areas: {_truncated_list(hunk_contexts, 6)}")
 
-    if has_api:
-        summary_points.append("API endpoints modified")
-    if has_db:
-        summary_points.append("Database schema or models updated")
-    if has_ui:
-        summary_points.append("User interface improvements")
-    if has_test:
-        summary_points.append("Test coverage enhanced")
-    if has_config:
-        summary_points.append("Configuration updates")
-
+    # Only fall back to coarse filename-pattern guessing if the diff itself
+    # gave us nothing more specific above
     if not summary_points:
-        summary_points.append(title)
+        has_api = any('api' in f or 'route' in f or 'endpoint' in f for f in files_changed)
+        has_db = any('migration' in f or 'schema' in f or 'model' in f for f in files_changed)
+        has_ui = any('component' in f or 'ui' in f or 'page' in f or 'view' in f for f in files_changed)
+        has_test = any('test' in f for f in files_changed)
+        has_config = any('config' in f or 'setting' in f for f in files_changed)
+
+        if has_api:
+            summary_points.append("API endpoints modified")
+        if has_db:
+            summary_points.append("Database schema or models updated")
+        if has_ui:
+            summary_points.append("User interface improvements")
+        if has_test:
+            summary_points.append("Test coverage enhanced")
+        if has_config:
+            summary_points.append("Configuration updates")
+
+    # Last resort: list the actual files touched rather than a possibly
+    # meaningless title (e.g. autogenerated task IDs from a bot/agent)
+    if not summary_points:
+        if files_changed:
+            summary_points.append(f"Modified {len(files_changed)} file(s): {_truncated_list(files_changed)}")
+        else:
+            summary_points.append(title)
 
     if additions > 100 or deletions > 50:
-        summary_points.append(f"Significant refactoring (+{additions}/-{deletions} lines)")
+        summary_points.append(f"({additions} lines added, {deletions} removed)")
 
     # Detect risks
     risks = []
-    if has_db and deletions > 20:
+    if deletions > 20 and any('migration' in f or 'schema' in f for f in files_changed + new_files):
         risks.append("Database migration may require careful testing")
-    if 'remove' in title.lower() or 'deprecat' in title.lower():
+    if 'remove' in title.lower() or 'deprecat' in title.lower() or deleted_files:
         risks.append("Potential breaking change or deprecation")
 
     return {
@@ -601,6 +668,15 @@ def main():
 
     llm_endpoint = args.llm_api if args.use_ai else None
     llm_key = args.llm_api_key or os.environ.get('ANTHROPIC_API_KEY')
+
+    if not llm_endpoint:
+        print("\n" + "!" * 70)
+        print("NOTE: Running WITHOUT AI summarization (heuristic mode only).")
+        print("Summaries will list files/functions touched, not describe what")
+        print("the change actually does. For real AI-written descriptions, run:")
+        print("  --use-ai --llm-api https://api.anthropic.com/v1/messages \\")
+        print("  --llm-api-key <your key>   (or set ANTHROPIC_API_KEY)")
+        print("!" * 70)
 
     if gh and repo_name:
         print("\n=== Using PR-based analysis (v2.1) ===")
