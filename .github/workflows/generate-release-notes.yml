@@ -25,6 +25,7 @@ on:
 permissions:
   contents: write
   pull-requests: read
+  models: read
 
 jobs:
   generate-release-notes:
@@ -60,7 +61,9 @@ jobs:
             --environment \"$ENVIRONMENT\""
       
           if [ "$USE_AI" = "true" ]; then
-            CMD="$CMD --use-ai"
+            CMD="$CMD --use-ai \
+              --llm-api https://models.github.ai/inference/chat/completions \
+              --llm-api-key \"$GH_TOKEN\""
           fi
       
           echo "$CMD"
