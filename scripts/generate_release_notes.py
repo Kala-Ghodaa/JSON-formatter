@@ -282,19 +282,27 @@ def generate_markdown(changes: dict, environment: str, date_from: str, date_to: 
 
 
 def summarize_with_llm(pr_data: dict, diff_data: dict, api_endpoint: Optional[str] = None,
-                        api_key: Optional[str] = None) -> dict:
+                        api_key: Optional[str] = None, model: str = "openai/gpt-4o-mini") -> dict:
     """
     Send PR diff to LLM for intelligent summarization.
 
     Args:
         pr_data: PR metadata (title, labels, etc.)
         diff_data: Git diff data (files, additions, deletions, content)
-        api_endpoint: Optional LLM API endpoint. If it points at
-            api.anthropic.com, this calls the Messages API correctly (auth
-            header, message format, response parsing). Any other endpoint is
-            called with the original {"prompt": ...} contract, so a custom
-            summarization service still works unchanged.
-        api_key: API key for the endpoint (required for Anthropic).
+        api_endpoint: Optional LLM API endpoint. Three contracts are supported:
+            - Anthropic Messages API (endpoint contains "anthropic.com"):
+              x-api-key auth, message format, content-block parsing.
+            - OpenAI-compatible Chat Completions (GitHub Models
+              "models.github.ai", any "openai" endpoint, or a URL ending in
+              "/chat/completions"): Bearer auth, messages format,
+              choices[0].message.content parsing.
+            - Any other endpoint: the original {"prompt": ...} contract, so a
+              custom summarization service still works unchanged.
+        api_key: API key for the endpoint (required for Anthropic and
+            OpenAI-compatible endpoints; for GitHub Models this is a token
+            with `models: read`).
+        model: Model id for OpenAI-compatible endpoints (default suits
+            GitHub Models, e.g. "openai/gpt-4o-mini").
 
     Returns:
         dict with:
@@ -341,6 +349,16 @@ Respond with ONLY a JSON object (no markdown fences, no other text) in this form
         return _heuristic_summary(pr_data, diff_data)
 
     is_anthropic = "anthropic.com" in api_endpoint
+    is_openai_compatible = (
+        "models.github.ai" in api_endpoint
+        or "openai" in api_endpoint
+        or api_endpoint.rstrip("/").endswith("/chat/completions")
+    )
+
+    system_prompt = (
+        "You respond with only a single valid JSON object matching the "
+        "requested schema. No markdown fences, no commentary."
+    )
 
     try:
         headers = {"Content-Type": "application/json"}
@@ -355,11 +373,26 @@ Respond with ONLY a JSON object (no markdown fences, no other text) in this form
             payload = {
                 "model": "claude-sonnet-5",
                 "max_tokens": 1024,
-                "system": "You respond with only a single valid JSON object matching the requested schema. No markdown fences, no commentary.",
+                "system": system_prompt,
                 "messages": [{"role": "user", "content": prompt}]
             }
+        elif is_openai_compatible:
+            if not api_key:
+                raise ValueError(
+                    "OpenAI-compatible endpoint requires an API key "
+                    "(--llm-api-key; for GitHub Models use a token with models:read)"
+                )
+            headers["Authorization"] = f"Bearer {api_key}"
+            payload = {
+                "model": model,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+            }
         else:
-            # Original custom contract, preserved for non-Anthropic endpoints
+            # Original custom contract, preserved for other endpoints
             payload = {"prompt": prompt}
 
         response = requests.post(api_endpoint, json=payload, headers=headers, timeout=30)
@@ -372,6 +405,8 @@ Respond with ONLY a JSON object (no markdown fences, no other text) in this form
                 for block in data.get("content", [])
                 if block.get("type") == "text"
             )
+        elif is_openai_compatible:
+            text = data["choices"][0]["message"]["content"]
         else:
             text = data if isinstance(data, str) else json.dumps(data)
 
@@ -626,7 +661,10 @@ def main():
     parser.add_argument("--use-ai", dest="use_ai", action="store_true", help="Use AI for summarization")
     parser.add_argument("--llm-api", dest="llm_api", default=None, help="LLM API endpoint for intelligent summarization")
     parser.add_argument("--llm-api-key", dest="llm_api_key", default=None,
-                         help="API key for the LLM endpoint (falls back to ANTHROPIC_API_KEY env var)")
+                         help="API key for the LLM endpoint (falls back to ANTHROPIC_API_KEY env var; "
+                              "for GitHub Models, to GH_TOKEN/GITHUB_TOKEN)")
+    parser.add_argument("--llm-model", dest="llm_model", default="openai/gpt-4o-mini",
+                         help="Model id for OpenAI-compatible endpoints (default: openai/gpt-4o-mini)")
     parser.add_argument("--output", default="release-notes.md", help="Output file path")
 
     args = parser.parse_args()
@@ -666,8 +704,19 @@ def main():
     if not repo_name:
         print("Warning: Could not determine repository name. PR lookup may be limited.")
 
-    llm_endpoint = args.llm_api if args.use_ai else None
+    GITHUB_MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
+
+    llm_endpoint = None
+    if args.use_ai:
+        # If --use-ai is set but no endpoint given, default to GitHub Models
+        # so the workflow can't silently degrade to heuristic mode again.
+        llm_endpoint = args.llm_api or GITHUB_MODELS_ENDPOINT
+
     llm_key = args.llm_api_key or os.environ.get('ANTHROPIC_API_KEY')
+    # GitHub Models authenticates with the same token as the API; fall back to
+    # it when no explicit key was supplied.
+    if llm_endpoint and "models.github.ai" in llm_endpoint and not llm_key:
+        llm_key = token
 
     if not llm_endpoint:
         print("\n" + "!" * 70)
@@ -699,7 +748,8 @@ def main():
                     print(f"  Warning: Could not get diff: {e}")
                     diff_data = {'files_changed': [], 'additions': 0, 'deletions': 0, 'diff_content': ''}
 
-                summary_result = summarize_with_llm(pr, diff_data, api_endpoint=llm_endpoint, api_key=llm_key)
+                summary_result = summarize_with_llm(pr, diff_data, api_endpoint=llm_endpoint,
+                                                    api_key=llm_key, model=args.llm_model)
 
                 category = summary_result.get('category', 'technical')
                 if category not in changes:
