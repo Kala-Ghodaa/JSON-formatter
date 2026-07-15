@@ -1,0 +1,73 @@
+name: Generate Release Notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+      date_to:
+        description: "End date (YYYY-MM-DD)"
+        required: true
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+      use_ai_summarization:
+        description: "Use AI to enhance release notes"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  generate-release-notes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install PyGithub requests
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATE_FROM: ${{ inputs.date_from }}
+          DATE_TO: ${{ inputs.date_to }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          USE_AI: ${{ inputs.use_ai_summarization }}
+        run: |
+          python scripts/generate_release_notes.py \
+            --from "$DATE_FROM" \
+            --to "$DATE_TO" \
+            --environment "$ENVIRONMENT" \
+            --use-ai "$USE_AI"
+
+      - name: Display release notes
+        run: cat release-notes.md
+
+      - name: Publish summary
+        run: cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-${{ inputs.environment }}-${{ inputs.date_from }}
+          path: release-notes.md
